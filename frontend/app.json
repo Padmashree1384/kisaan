@@ -1,0 +1,30 @@
+{
+  "expo": {
+    "name": "Kisaan Mitra",
+    "slug": "kisaan-mitra",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#1B5E20"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.kisaanmitra.app",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Used to find your nearest mandi."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#1B5E20"
+      },
+      "package": "com.kisaanmitra.app",
+      "permissions": ["INTERNET", "RECEIVE_BOOT_COMPLETED", "VIBRATE"]
+    }
+  }
+}

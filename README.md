@@ -319,6 +319,7 @@ The SMS messages in `sms_service.py` must match your DLT-approved templates for 
 # Dockerfile-friendly start command
 uvicorn app.main:app --host 0.0.0.0 --port $PORT
 ```
+# npx ngrok http 8000
 
 ### MongoDB
 Use [MongoDB Atlas](https://www.mongodb.com/atlas) free tier. Replace `MONGODB_URL` with your Atlas connection string.

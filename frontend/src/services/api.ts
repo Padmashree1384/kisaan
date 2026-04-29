@@ -8,7 +8,8 @@ import axios, { AxiosInstance, AxiosResponse } from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // ── Change this to your backend URL ──────────────────────────────────────────
-const BASE_URL = 'http://192.168.29.44:8000/api/v1'; // Android emulator
+const BASE_URL = 'https://neutron-talcum-ranger.ngrok-free.dev/api/v1';
+//const BASE_URL = 'http://192.168.29.44:8000/api/v1'; // Android emulator
 // const BASE_URL = 'http://localhost:8000/api/v1'; // iOS simulator
 // const BASE_URL = 'https://your-production-api.com/api/v1';
 

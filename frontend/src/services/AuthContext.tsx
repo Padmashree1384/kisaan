@@ -1,11 +1,16 @@
-/**
- * AuthContext — global authentication state.
- * Wraps the entire app. Provides login, logout, user object.
- */
-
 import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { authAPI, User, LoginPayload, RegisterPayload } from '../services/api';
+import * as Notifications from 'expo-notifications';
+import { Platform } from 'react-native';
+import { authAPI, userAPI, User, LoginPayload, RegisterPayload } from '../services/api';
+
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: true,
+  }),
+});
 
 interface AuthContextType {
   user: User | null;
@@ -25,7 +30,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Load persisted auth on app start
   useEffect(() => {
     loadStoredAuth();
   }, []);
@@ -39,6 +43,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       if (storedToken[1] && storedUser[1]) {
         setToken(storedToken[1]);
         setUser(JSON.parse(storedUser[1]));
+        await registerForPushNotifications();
       }
     } catch (e) {
       console.log('Error loading auth:', e);
@@ -56,14 +61,55 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     setUser(newUser);
   };
 
+  const registerForPushNotifications = async () => {
+    try {
+      if (Platform.OS === 'android') {
+        await Notifications.setNotificationChannelAsync('kisaan-mitra', {
+          name: 'Kisaan Mitra Alerts',
+          importance: Notifications.AndroidImportance.MAX,
+          vibrationPattern: [0, 250, 250, 250],
+          lightColor: '#2D7A45',
+          sound: 'default',
+        });
+      }
+
+      const { status: existingStatus } = await Notifications.getPermissionsAsync();
+      let finalStatus = existingStatus;
+      if (existingStatus !== 'granted') {
+        const { status } = await Notifications.requestPermissionsAsync();
+        finalStatus = status;
+      }
+      if (finalStatus !== 'granted') {
+        console.log('⚠️ Notification permission denied');
+        return;
+      }
+
+      // Get Expo push token with projectId
+      const pushToken = await Notifications.getExpoPushTokenAsync({
+        projectId: 'ed7aed5e-dfdb-4db8-96ad-8980260ec263',
+      });
+
+      const fcmToken = pushToken.data;
+      console.log('📱 Push token:', fcmToken);
+
+      await userAPI.updateFcmToken(fcmToken);
+      console.log('✅ FCM token saved to backend!');
+
+    } catch (e) {
+      console.log('⚠️ Push notification setup failed:', e);
+    }
+  };
+
   const login = async (data: LoginPayload) => {
     const res = await authAPI.login(data);
     await saveAuth(res.data.access_token, res.data.user);
+    await registerForPushNotifications();
   };
 
   const register = async (data: RegisterPayload) => {
     const res = await authAPI.register(data);
     await saveAuth(res.data.access_token, res.data.user);
+    await registerForPushNotifications();
   };
 
   const logout = async () => {
@@ -74,7 +120,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   const refreshUser = async () => {
     try {
-      const { userAPI } = await import('../services/api');
       const res = await userAPI.getProfile();
       setUser(res.data);
       await AsyncStorage.setItem('user_data', JSON.stringify(res.data));
@@ -84,18 +129,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   return (
-    <AuthContext.Provider
-      value={{
-        user,
-        token,
-        isLoading,
-        isAuthenticated: !!token && !!user,
-        login,
-        register,
-        logout,
-        refreshUser,
-      }}
-    >
+    <AuthContext.Provider value={{
+      user, token, isLoading,
+      isAuthenticated: !!token && !!user,
+      login, register, logout, refreshUser,
+    }}>
       {children}
     </AuthContext.Provider>
   );

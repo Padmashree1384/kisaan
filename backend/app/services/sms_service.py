@@ -1,29 +1,25 @@
 """
-Fast2SMS integration for sending SMS alerts to farmers.
+Fast2SMS integration — FIXED ROUTE
 
-Docs: https://docs.fast2sms.com/
-Supports: DLT-registered transactional and promotional routes.
+CHANGE: Using route "q" (Quick) instead of "dlt"
+- "dlt" requires registered Sender ID and DLT template (needs approval)
+- "q" route works immediately without any registration
+- Perfect for development and testing
 """
 
 import httpx
 from typing import Optional, List
-
 from app.config import settings
 
 
 class SMSService:
-    """
-    Send SMS using Fast2SMS Bulk API.
-    Uses the DLT transactional route for reliability.
-    """
 
     def __init__(self):
         self.api_key = settings.FAST2SMS_API_KEY
-        self.sender_id = settings.FAST2SMS_SENDER_ID
-        self.base_url = settings.FAST2SMS_BASE_URL
+        self.base_url = "https://www.fast2sms.com/dev/bulkV2"
 
     def _is_configured(self) -> bool:
-        return bool(self.api_key and self.api_key != "")
+        return bool(self.api_key and self.api_key.strip() != "")
 
     async def send_sms(
         self,
@@ -31,34 +27,33 @@ class SMSService:
         message: str,
         priority: str = "Normal",
     ) -> bool:
-        """
-        Send a single SMS to a farmer's phone number.
-
-        Args:
-            phone: 10-digit Indian mobile number (no country code)
-            message: SMS body (max 160 chars for single SMS)
-            priority: "Normal" or "High"
-
-        Returns:
-            True if API accepted the message, False otherwise
-        """
+        """Send SMS using Fast2SMS Quick route (no DLT registration needed)."""
         if not self._is_configured():
-            print(f"⚠️  Fast2SMS not configured — would send to {phone}: {message}")
-            return False  # Graceful dev fallback
+            print(f"⚠️  Fast2SMS not configured — SMS skipped for {phone}")
+            return False
+
+        # Clean phone number — remove spaces, dashes, country code
+        clean_phone = phone.replace(" ", "").replace("-", "")
+        if clean_phone.startswith("+91"):
+            clean_phone = clean_phone[3:]
+        if clean_phone.startswith("91") and len(clean_phone) == 12:
+            clean_phone = clean_phone[2:]
+
+        if len(clean_phone) != 10:
+            print(f"❌ Invalid phone number: {phone}")
+            return False
 
         headers = {
             "authorization": self.api_key,
             "Content-Type": "application/json",
-            "Cache-Control": "no-cache",
         }
 
         payload = {
-            "route": "dlt",           # DLT transactional route
-            "sender_id": self.sender_id,
-            "message": message,
-            "variables_values": "",
-            "flash": "0",
-            "numbers": phone,
+            "route": "q",              # Quick route — no DLT needed
+            "message": message[:160],  # SMS limit
+            "language": "english",
+            "flash": 0,
+            "numbers": clean_phone,
         }
 
         try:
@@ -71,108 +66,67 @@ class SMSService:
                 data = response.json()
 
             if data.get("return") is True:
-                print(f"✅ SMS sent to {phone}: {message[:50]}...")
+                print(f"✅ SMS sent to {clean_phone}")
                 return True
             else:
-                print(f"❌ SMS failed to {phone}: {data.get('message', 'Unknown error')}")
+                err = data.get("message", data)
+                print(f"❌ SMS failed to {clean_phone}: {err}")
                 return False
 
         except httpx.TimeoutException:
-            print(f"⏱️  SMS timeout for {phone}")
+            print(f"⏱️  SMS timeout for {clean_phone}")
             return False
         except Exception as e:
             print(f"❌ SMS error: {e}")
             return False
 
-    async def send_bulk_sms(
-        self,
-        phones: List[str],
-        message: str,
-    ) -> int:
-        """
-        Send the same SMS to multiple numbers.
-        Fast2SMS supports comma-separated numbers in one API call.
-        Returns count of accepted requests (not guaranteed deliveries).
-        """
+    async def send_bulk_sms(self, phones: List[str], message: str) -> int:
         if not self._is_configured() or not phones:
             return 0
-
-        # Fast2SMS accepts comma-separated numbers (max ~100 per call)
         numbers_str = ",".join(phones[:100])
-
         success = await self.send_sms(numbers_str, message)
         return len(phones) if success else 0
 
-    # ── Pre-built message templates ─────────────────────────────────────────
-
     def build_price_alert_message(
-        self,
-        crop: str,
-        market: str,
-        price: float,
-        change_pct: float,
-        language: str = "en",
+        self, crop: str, market: str, price: float,
+        change_pct: float, language: str = "en"
     ) -> str:
-        """
-        Build a concise, farmer-friendly SMS message.
-        """
-        direction = "upar" if change_pct > 0 else "neeche"
         change_str = f"+{change_pct:.1f}%" if change_pct > 0 else f"{change_pct:.1f}%"
-
         if language == "kn":
-            # Kannada message
             return (
                 f"ಕಿಸಾನ್ ಮಿತ್ರ: {crop} ಬೆಲೆ {market} ನಲ್ಲಿ "
-                f"₹{price:.0f}/ಕ್ವಿಂ ({change_str}). "
-                f"ಈಗಲೇ ಮಾರಾಟ ಮಾಡಿ! - KISAAN"
+                f"Rs.{price:.0f}/qtl ({change_str}). App ತೆರೆಯಿರಿ. -KISAAN"
             )
-        else:
-            # English (default)
-            return (
-                f"Kisaan Mitra Alert: {crop} price at {market} is "
-                f"Rs.{price:.0f}/qtl ({change_str}). "
-                f"Check app for details. -KISAAN"
-            )
+        return (
+            f"Kisaan Mitra: {crop} at {market} is "
+            f"Rs.{price:.0f}/qtl ({change_str}). Check app. -KISAAN"
+        )
 
     def build_critical_alert_message(
-        self,
-        crop: str,
-        market: str,
-        price: float,
-        language: str = "en",
+        self, crop: str, market: str, price: float, language: str = "en"
     ) -> str:
-        """Build an urgent critical-price SMS."""
         if language == "kn":
             return (
-                f"🚨 ಜರೂರಿ! {crop} ₹{price:.0f}/ಕ್ವಿಂ "
-                f"{market} ನಲ್ಲಿ - 7 ದಿನಗಳಲ್ಲಿ ಅತ್ಯಧಿಕ ಬೆಲೆ! "
-                f"ಈಗಲೇ ಮಾರಾಟ ಮಾಡಿ. -KISAAN"
+                f"URGENT: {crop} Rs.{price:.0f}/qtl {market}ನಲ್ಲಿ "
+                f"- 7 ದಿನದ ಗರಿಷ್ಠ! ಈಗ ಮಾರಾಟ ಮಾಡಿ. -KISAAN"
             )
-        else:
-            return (
-                f"URGENT - Kisaan Mitra: {crop} at Rs.{price:.0f}/qtl "
-                f"in {market} - HIGHEST PRICE in 7 days! "
-                f"Sell NOW. -KISAAN"
-            )
+        return (
+            f"URGENT Kisaan Mitra: {crop} at Rs.{price:.0f}/qtl "
+            f"in {market} - 7-DAY HIGH! Sell NOW. -KISAAN"
+        )
 
     def build_inactive_reminder_message(
-        self,
-        name: str,
-        language: str = "en",
+        self, name: str, language: str = "en"
     ) -> str:
-        """Re-engagement SMS for inactive users."""
         if language == "kn":
             return (
-                f"ನಮಸ್ಕಾರ {name}! ಕಿಸಾನ್ ಮಿತ್ರ ಆಪ್ ತೆರೆಯಿರಿ - "
-                f"ನಿಮ್ಮ ಬೆಳೆಗಳ ಹೊಸ ಬೆಲೆಗಳು ಕಾಯುತ್ತಿವೆ. -KISAAN"
+                f"ನಮಸ್ಕಾರ {name}! ಕಿಸಾನ್ ಮಿತ್ರ App ತೆರೆಯಿರಿ - "
+                f"ಹೊಸ ಮಂಡಿ ಬೆಲೆಗಳು ಕಾಯುತ್ತಿವೆ. -KISAAN"
             )
-        else:
-            return (
-                f"Hello {name}! Open Kisaan Mitra app - "
-                f"New mandi prices are waiting for your crops. "
-                f"Don't miss out! -KISAAN"
-            )
+        return (
+            f"Hello {name}! Open Kisaan Mitra - "
+            f"New mandi prices are waiting. -KISAAN"
+        )
 
 
-# Singleton instance
 sms_service = SMSService()
